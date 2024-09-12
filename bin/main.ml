@@ -7,8 +7,36 @@ type json = Yojson.Basic.t
 let input_file = "target-logs"
 let coollist_file = "coollist.txt"
 let output_file = "output.json"
-let excluded_list_file = [ "test.json" ]
+let excluded_list_files = [ "test.json"; "test2.json"; "test3.json" ]
 let try_card_number = Utils.result_from_try Utils.get_cardNumber
+
+(* get excluded list by json files *)
+let get_excluded_list_from_file filename =
+  let content = In_channel.with_open_bin filename In_channel.input_all in
+  let jsondata = content |> Yojson.Basic.from_string in
+  let jsonlist =
+    match jsondata with
+    | `List list -> list
+    | _ -> failwith "Read exclude list exception."
+  in
+  let rec aux l =
+    match l with
+    | [] -> []
+    | [ x ] -> [ Utils.get_cardNumber x ]
+    | x :: xs -> List.append [ Utils.get_cardNumber x ] (aux xs)
+  in
+  aux jsonlist
+;;
+
+let make_excluded_list filenames =
+  let rec aux l =
+    match l with
+    | [] -> []
+    | [ x ] -> get_excluded_list_from_file x
+    | x :: xs -> List.append (aux [ x ]) (aux xs)
+  in
+  aux filenames
+;;
 
 (* Функция для записи JSON объекта в файл *)
 let write_json_to_file filename json =
@@ -46,18 +74,9 @@ let remove_fields fields_to_remove (json : json) =
   | _ -> failwith "Expected a JSON object"
 ;;
 
-let print_json_type (json : json) =
-  let () =
-    match json with
-    | `Assoc _ -> print_endline "It's an Assoc"
-    | `List _ -> print_endline "It's a List"
-    | `String str -> print_endline str
-    | `Int _ -> print_endline "It's an Int"
-    | `Float _ -> print_endline "It's a Float"
-    | `Bool _ -> print_endline "It's a Bool"
-    | `Null -> print_endline "It's Null"
-  in
-  json
+let get_list_data (json : json) =
+  match json with
+  | _ -> failwith "Expected a JSON object"
 ;;
 
 (* filter *)
@@ -81,13 +100,21 @@ let filter (json : json) =
   | _ -> false
 ;;
 
-let coollist_filter (bins : string list) (json : json) =
+let exclude_filter (excluded_list : string list) (json : json) =
+  let pred s = not (List.exists (( = ) s) excluded_list) in
+  let res = json |> try_card_number |> Result.map pred in
+  match res with
+  | Ok exist -> exist
+  | Error _ -> false
+;;
+
+let coollist_filter (ptrn : string list) (json : json) =
   let contains str entry =
     try Str.search_forward (Str.regexp entry) str 0 >= 0 with
     | _ -> false
   in
   let res =
-    json |> try_card_number |> Result.map (fun cn -> List.exists (contains cn) bins)
+    json |> try_card_number |> Result.map (fun cn -> List.exists (contains cn) ptrn)
   in
   match res with
   | Ok exist -> exist
@@ -99,7 +126,7 @@ let process_list_file filename =
   filelines |> Bat.Enum.map get_data_from_line |> Bat.List.of_enum
 ;;
 
-let process_json_file filename coollist =
+let process_generated_json_file filename excludedlist coollist =
   let filelines = Bat.File.lines_of filename in
   filelines
   |> Bat.Enum.map get_data_from_line
@@ -107,6 +134,7 @@ let process_json_file filename coollist =
   |> Bat.Enum.map try_props_data
   |> Bat.Enum.filter (fun json -> filter json)
   |> Bat.Enum.filter (fun json -> coollist_filter coollist json)
+  |> Bat.Enum.filter (fun json -> exclude_filter excludedlist json)
   |> Bat.Enum.map
        (remove_fields
           [ "campaignId"; "affId"; "product1_id"; "product1_qty"; "salesUrl" ])
@@ -119,12 +147,13 @@ let process_json_file filename coollist =
 ;;
 
 let () =
-  let program input coollist =
+  let program input exludedlist coollist =
     coollist
     |> process_list_file
-    |> process_json_file input
+    |> process_generated_json_file input exludedlist
     |> write_json_to_file output_file
   in
-  ignore (program input_file coollist_file);
+  let excluded_list = make_excluded_list excluded_list_files in
+  ignore (program input_file excluded_list coollist_file);
   print_endline "done"
 ;;
