@@ -1,0 +1,7 @@
+(executable
+ (public_name parser)
+ (name main)
+ (modules main utils)
+ (flags
+   (:standard (-w -32)))
+ (libraries parser batteries yojson))
