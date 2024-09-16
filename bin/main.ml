@@ -74,11 +74,6 @@ let remove_fields fields_to_remove (json : json) =
   | _ -> failwith "Expected a JSON object"
 ;;
 
-let get_list_data (json : json) =
-  match json with
-  | _ -> failwith "Expected a JSON object"
-;;
-
 (* filter *)
 let filter (json : json) =
   match json with
@@ -110,7 +105,7 @@ let exclude_filter (excluded_list : string list) (json : json) =
 
 let coollist_filter (ptrn : string list) (json : json) =
   let contains str entry =
-    try Str.search_forward (Str.regexp entry) str 0 >= 0 with
+    try Str.search_forward (Str.regexp entry) str 0 = 0 with
     | _ -> false
   in
   let res =
